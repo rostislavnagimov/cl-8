@@ -1,0 +1,54 @@
+[package]
+name = "cl-8"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "High-performance compact 8-bit Cyrillic-Latin text encoding (no_std, zero-allocation)"
+authors = ["Rostislav Nagimov"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rostislavnagimov/cl-8"
+homepage = "https://github.com/rostislavnagimov/cl-8"
+documentation = "https://docs.rs/cl-8"
+readme = "README.md"
+keywords = ["encoding", "cyrillic", "compression", "no-std", "unicode"]
+categories = ["encoding", "no-std", "no-std::no-alloc", "text-processing", "compression"]
+# Whitelist: only what is required to build and document the crate.
+# Tests, benches, corpus, and working documents never reach the published package.
+include = [
+    "/src/",
+    "/tables/*.csv",
+    "/build.rs",
+    "/README.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+]
+
+[lib]
+name = "cl8"
+path = "src/lib.rs"
+bench = false
+
+[features]
+# Default: zero-allocation no_std core (*_into(&mut [u8]) APIs only)
+default = []
+# Allocating wrappers returning Vec<u8> / String (requires allocator, no std needed)
+alloc = []
+# Standard library support: includes alloc and implements std::error::Error for error types
+std = ["alloc"]
+
+[dependencies]
+# The core library has zero runtime dependencies.
+
+[dev-dependencies]
+proptest = "1.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "cl8_bench"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

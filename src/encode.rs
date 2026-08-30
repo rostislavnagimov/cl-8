@@ -99,8 +99,7 @@ impl Encoder {
             // Section 9.1: open a CAPS_ON run when the upcoming stretch carries enough
             // case-shift-requiring characters to pay for the two toggle bytes.
             if !self.caps_state.applies() && Self::needs_case_shift(ch) {
-                let (run_len, shifts) =
-                    Self::scan_caps_run(&input[byte_idx + ch.len_utf8()..]);
+                let (run_len, shifts) = Self::scan_caps_run(&input[byte_idx + ch.len_utf8()..]);
                 if shifts >= CAPS_TOGGLE_THRESHOLD {
                     self.ensure_unicode_closed(output)?;
                     self.write_byte(CAPS_ON, output)?;

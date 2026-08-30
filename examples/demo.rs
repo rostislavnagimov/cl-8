@@ -40,7 +40,10 @@ const SECTIONS: &[Section] = &[
                 "Это тестовый текст для проверки эффективности сжатия.",
                 "Russian (longer prose)",
             ),
-            ("Съешь ещё этих мягких булок", "Russian (pangram fragment, ё)"),
+            (
+                "Съешь ещё этих мягких булок",
+                "Russian (pangram fragment, ё)",
+            ),
             ("Ёлка ёлка", "Russian (Ё/ё — capitalization exception)"),
             ("ЙоЖмАк", "Russian (alternating case)"),
             ("ПРИВЕТ МОСКВА", "Russian (all caps, direct 1-byte)"),
@@ -129,7 +132,10 @@ const SECTIONS: &[Section] = &[
                 "SCREAMING_SNAKE_CASE constant",
                 "Uppercase identifier (direct 1-byte uppercase)",
             ),
-            ("ЄЂ", "Case-shift run of 2 (prefix is not worse — no toggle)"),
+            (
+                "ЄЂ",
+                "Case-shift run of 2 (prefix is not worse — no toggle)",
+            ),
             ("ЄЇЂЅ", "Case-shift run of 4 (toggle wins)"),
             ("ČŠŽ", "Uppercase diacritics (toggle wins over prefixes)"),
             (
@@ -151,7 +157,10 @@ const SECTIONS: &[Section] = &[
                 "\"straight\" vs «typographic»",
                 "Quote styles are distinct codes",
             ),
-            ("line1\nline2\ttab", "Whitespace control bytes (newline, tab)"),
+            (
+                "line1\nline2\ttab",
+                "Whitespace control bytes (newline, tab)",
+            ),
             ("a b c", "Spaces"),
         ],
     },

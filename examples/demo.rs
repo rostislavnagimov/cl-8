@@ -10,8 +10,7 @@
 //!
 //! Run with: `cargo run --example demo`
 
-use std::process::ExitCode;
-use std::str;
+use std::{process::ExitCode, str, time::Instant};
 
 use cl8::consts::{CAPS_ON, UNI_ON};
 use cl8::{decode_into, encode_into, max_decoded_len, max_encoded_len};
@@ -283,6 +282,8 @@ fn main() -> ExitCode {
     println!("(Its section header says 41 while naming 38 — a known discrepancy,");
     println!("recorded in tests/corpus/MANIFEST.tsv.)");
 
+    let start = Instant::now();
+
     let outcomes: Vec<Outcome> = SECTIONS
         .iter()
         .flat_map(|section| {
@@ -296,7 +297,11 @@ fn main() -> ExitCode {
         })
         .collect();
 
+    let finish = start.elapsed();
+    
+
     let total = outcomes.len();
+    let avg_time = finish / total as u32;
     let failed = outcomes.iter().filter(|c| !c.ok).count();
     let utf8_total: usize = outcomes.iter().map(|c| c.utf8_len).sum();
     let cl8_total: usize = outcomes.iter().map(|c| c.cl8_len).sum();
@@ -310,6 +315,10 @@ fn main() -> ExitCode {
     println!("Total UTF-8       : {utf8_total} bytes");
     println!("Total CL-8        : {cl8_total} bytes");
     println!("Overall savings   : {overall:+.1}%");
+
+    println!("Total time        : {:?}", finish);
+    println!("Average time      : {:?}", avg_time);
+
 
     if failed == 0 {
         println!("\nAll cases round-tripped exactly.");

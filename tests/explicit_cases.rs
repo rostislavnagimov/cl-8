@@ -456,8 +456,9 @@ fn cancel_discards_message() {
 
 #[test]
 fn reserved_codes_are_rejected() {
-    // Спека, раздел 0: 220..=231 — резерв, свободно (12 кодов). Символа за ними нет.
-    for code in 220u8..=231 {
+    // Спека, раздел 0: 226..=231 — резерв, свободно (6 кодов). Символа за ними нет.
+    // 220..=225 заняты: CR, nbsp, узкий nbsp, мягкий перенос, ×, −.
+    for code in 226u8..=231 {
         let mut buf = [0u8; 16];
         let r = decode_into(&[code], &mut buf);
         assert!(

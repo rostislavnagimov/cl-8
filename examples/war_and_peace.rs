@@ -64,15 +64,17 @@ fn main() {
         }
     }
 
-    let text = String::from_utf8(fallback_content).expect("фоллбэк — валидный UTF-8");
+    if has_unicode_fallback {
+        let text = String::from_utf8(fallback_content).expect("фоллбэк — валидный UTF-8");
 
-    let mut counts: BTreeMap<char, usize> = BTreeMap::new();
+        let mut counts: BTreeMap<char, usize> = BTreeMap::new();
 
-    println!("\nunicode fallback used for");
-    for ch in text.chars() {
-        *counts.entry(ch).or_insert(0) += 1;
-    }
-    for (ch, n) in &counts {
-        println!("U+{:04X} {:?} — {} раз", *ch as u32, ch, n);
+        println!("\nunicode fallback used for");
+        for ch in text.chars() {
+            *counts.entry(ch).or_insert(0) += 1;
+        }
+        for (ch, n) in &counts {
+            println!("U+{:04X} {:?} — {} раз", *ch as u32, ch, n);
+        }
     }
 }

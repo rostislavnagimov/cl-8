@@ -50,10 +50,8 @@ harness = false
 
 [profile.release]
 opt-level = 3
-lto = true
 codegen-units = 1
 panic = "abort"
-strip = true
 
 [[example]]
 name = "war_and_peace"

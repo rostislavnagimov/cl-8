@@ -108,24 +108,3 @@ pub fn find_terminator(bytes: &[u8]) -> Option<usize> {
     }
     None
 }
-
-/// Returns `true` if a character requires Unicode fallback delegation.
-#[must_use]
-pub fn requires_fallback(c: char) -> bool {
-    let cp = c as u32;
-    crate::tables::code_of(cp).is_none() && !is_modifier_result(cp)
-}
-
-/// Checks whether a codepoint can be produced via a (modifier, base) pair.
-#[must_use]
-fn is_modifier_result(codepoint: u32) -> bool {
-    let mut i = 0usize;
-    while i < crate::tables::MODIFIER_TABLE.len() {
-        let (_, _, result) = crate::tables::MODIFIER_TABLE[i];
-        if result == codepoint {
-            return true;
-        }
-        i += 1;
-    }
-    false
-}

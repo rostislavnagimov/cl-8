@@ -298,7 +298,6 @@ fn main() -> ExitCode {
         .collect();
 
     let finish = start.elapsed();
-    
 
     let total = outcomes.len();
     let avg_time = finish / total as u32;
@@ -318,7 +317,6 @@ fn main() -> ExitCode {
 
     println!("Total time        : {:?}", finish);
     println!("Average time      : {:?}", avg_time);
-
 
     if failed == 0 {
         println!("\nAll cases round-tripped exactly.");

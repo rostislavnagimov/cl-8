@@ -1,5 +1,6 @@
+use cl8::consts::{is_unicode_terminator, UNI_ON};
+use std::collections::BTreeMap;
 use std::{fs, time::Instant};
-    use std::collections::BTreeMap;
 
 fn main() {
     let input_path = "./examples/WarAndPeace.txt";
@@ -46,32 +47,32 @@ fn main() {
     println!("modifiers used: {has_modifier}");
     println!("unicode fallback used: {has_unicode_fallback}");
 
+    let mut fallback_blocks = 0usize;
+    let mut fallback_content: Vec<u8> = Vec::new();
+    let mut in_fallback = false;
 
-
-// --- Какие именно символы ушли в fallback ---
-let mut fallback_chars: BTreeMap<char, usize> = BTreeMap::new();
-// --- Какие именно символы закодированы через модификатор ---
-let mut modifier_chars: BTreeMap<char, usize> = BTreeMap::new();
-
-for ch in text.chars() {
-    if cl8::unicode_fallback::requires_fallback(ch) {
-        *fallback_chars.entry(ch).or_insert(0) += 1;
-    } else if cl8::tables::find_modifier_pair_for_codepoint(ch as u32).is_some() {
-        *modifier_chars.entry(ch).or_insert(0) += 1;
+    for &b in encoded.iter() {
+        if in_fallback {
+            if is_unicode_terminator(b) {
+                in_fallback = false;
+            } else {
+                fallback_content.push(b);
+            }
+        } else if b == UNI_ON {
+            in_fallback = true;
+            fallback_blocks += 1;
+        }
     }
-}
 
-println!("\n=== ушло в fallback (топ-50) ===");
-let mut fb: Vec<_> = fallback_chars.into_iter().collect();
-fb.sort_by(|a, b| b.1.cmp(&a.1));
-for (ch, count) in fb.iter().take(50) {
-    println!("{ch:?} (U+{:04X}) — {count} раз", *ch as u32);
-}
+    let text = String::from_utf8(fallback_content).expect("фоллбэк — валидный UTF-8");
 
-println!("\n=== закодировано через модификатор (топ-50) ===");
-let mut md: Vec<_> = modifier_chars.into_iter().collect();
-md.sort_by(|a, b| b.1.cmp(&a.1));
-for (ch, count) in md.iter().take(50) {
-    println!("{ch:?} (U+{:04X}) — {count} раз", *ch as u32);
-}
+    let mut counts: BTreeMap<char, usize> = BTreeMap::new();
+
+    println!("\nunicode fallback used for");
+    for ch in text.chars() {
+        *counts.entry(ch).or_insert(0) += 1;
+    }
+    for (ch, n) in &counts {
+        println!("U+{:04X} {:?} — {} раз", *ch as u32, ch, n);
+    }
 }

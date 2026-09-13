@@ -1,9 +1,11 @@
-//! Unicode fallback mode — Section 10 of the specification.
+//! Unicode fallback mode: raw UTF-8 passthrough.
 //!
-//! Control byte `UNI_ON` (236) switches the stream into raw UTF-8 passthrough mode.
-//! Inside this mode, the parser does not interpret sub-structures: ZWJ emoji sequences,
-//! skin tone modifiers, CJK, Arabic, and unsupported scripts are passed 1:1.
-//! Mode termination is triggered by any byte from the set `{0xC0, 0xC1, 0xF5..=0xFF}` (Section 10.2).
+//! `UNI_ON` (236) opens a block in which nothing is interpreted — ZWJ emoji sequences,
+//! skin tones, CJK and unsupported scripts pass through byte for byte. Any byte from
+//! `{0xC0, 0xC1, 0xF5..=0xFF}` closes it.
+//!
+//! The block costs two framing bytes, so it is cheap on solid runs of foreign text
+//! and expensive on single characters scattered through table text.
 
 use crate::error::DecodeError;
 
@@ -38,7 +40,7 @@ impl UnicodeMode {
         self.output_start
     }
 
-    /// Opens Unicode fallback mode at the specified input stream position.
+    /// Opens the mode, remembering where it started in both streams.
     pub fn open(&mut self, position: usize, output_start: usize) {
         self.opened_at = Some(position);
         self.output_start = output_start;
@@ -62,14 +64,14 @@ impl UnicodeMode {
     }
 }
 
-/// Validates that a byte slice contains strict, canonical UTF-8.
+/// Validates strict canonical UTF-8.
 ///
-/// Stricter than [`core::str::from_utf8`]: additionally rejects overlong encodings
-/// and unpaired surrogates (CESU-8, WTF-8), which could otherwise cause premature terminator matches.
+/// Stricter than [`core::str::from_utf8`]: also rejects overlong forms and unpaired
+/// surrogates (CESU-8, WTF-8), which would otherwise trip the terminator early.
 ///
 /// # Errors
 ///
-/// Returns [`DecodeError::InvalidUtf8InUnicodeMode`] with the offset of the invalid sequence.
+/// [`DecodeError::InvalidUtf8InUnicodeMode`] with the offset of the bad sequence.
 pub fn validate_canonical(bytes: &[u8]) -> Result<(), DecodeError> {
     let mut i = 0;
     while i < bytes.len() {
@@ -94,17 +96,4 @@ pub fn validate_canonical(bytes: &[u8]) -> Result<(), DecodeError> {
     }
 
     Ok(())
-}
-
-/// Finds the index of the first Unicode mode terminator in `bytes`.
-#[must_use]
-pub fn find_terminator(bytes: &[u8]) -> Option<usize> {
-    let mut i = 0usize;
-    while i < bytes.len() {
-        if crate::consts::is_unicode_terminator(bytes[i]) {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
 }

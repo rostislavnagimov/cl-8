@@ -1,15 +1,12 @@
-//! Error types for encoding and decoding.
+//! Error types.
 //!
-//! Both enums are zero-allocation and `Copy`, designed to operate in `no_std` environments
-//! without an allocator. Error context is conveyed via numeric offsets and bytes.
+//! Both are `Copy` and allocation-free: context travels as offsets and bytes.
 
 /// An error that occurred while decoding a CL-8 byte sequence into UTF-8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DecodeError {
-    /// Encountered a byte that corresponds neither to a table character nor a control code.
-    ///
-    /// Occurs for reserved codes 220..=231 which are unassigned in the specification.
+    /// A byte that is neither a table character nor a control code: the reserved 226..=231.
     UnknownByte {
         /// Byte offset from the start of the input stream.
         position: usize,
@@ -17,11 +14,9 @@ pub enum DecodeError {
         byte: u8,
     },
 
-    /// Two diacritic modifiers occurred in succession before a single base letter.
+    /// Two diacritics before one base letter — an undefined combination.
     ///
-    /// Section 8.4 declares multiple stacked diacritics undefined and requires
-    /// treating them as input errors. `CASE_SHIFT` combined with a single diacritic
-    /// is valid and does not trigger this error.
+    /// `CASE_SHIFT` plus one diacritic is valid and does not trigger this.
     StackedDiacritics {
         /// Position of the second diacritic modifier.
         position: usize,
@@ -33,7 +28,7 @@ pub enum DecodeError {
         position: usize,
     },
 
-    /// The (modifier, base) pair is undefined in the specification table (Section 8.3).
+    /// The (modifier, base) pair has no entry in the table.
     UndefinedCombination {
         /// Position of the base character.
         position: usize,
@@ -61,9 +56,7 @@ pub enum DecodeError {
         position: usize,
     },
 
-    /// The provided output buffer is smaller than required for the decoded text.
-    ///
-    /// Callers can compute a guaranteed upper bound with [`crate::max_decoded_len`].
+    /// Output buffer too small; [`crate::max_decoded_len`] gives a sufficient size.
     OutputTooSmall {
         /// Required buffer capacity in bytes.
         needed: usize,
@@ -76,9 +69,7 @@ pub enum DecodeError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum EncodeError {
-    /// The provided output buffer is smaller than required for the encoded data.
-    ///
-    /// Callers can compute a guaranteed upper bound with [`crate::max_encoded_len`].
+    /// Output buffer too small; [`crate::max_encoded_len`] gives a sufficient size.
     OutputTooSmall {
         /// Required buffer capacity in bytes.
         needed: usize,
@@ -86,10 +77,10 @@ pub enum EncodeError {
         available: usize,
     },
 
-    /// Input is not normalized in Unicode Normalization Form C (NFC).
+    /// Input is not NFC-normalized: a standalone combining mark was found.
     ///
-    /// Section 10.3 requires NFC preprocessing. The encoder detects standalone
-    /// combining marks and rejects them to prevent improper Unicode fallback delegation.
+    /// The encoder does not normalize — that would need the full Unicode tables it
+    /// exists to avoid — so it rejects such input instead of mis-encoding it.
     NotNfcNormalized {
         /// Character offset of the standalone combining mark in the input.
         position: usize,

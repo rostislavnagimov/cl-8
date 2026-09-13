@@ -5,8 +5,8 @@
 //! smoke test.
 //!
 //! Each label lists only the special characters actually present in that sample, and the
-//! output marks which cases used the `CAPS_ON`/`CAPS_OFF` toggle (Section 9.1) or the
-//! Unicode fallback (Section 10).
+//! output marks which cases used the `CAPS_ON`/`CAPS_OFF` toggle () or the
+//! Unicode fallback ().
 //!
 //! Run with: `cargo run --example demo`
 
@@ -120,7 +120,7 @@ const SECTIONS: &[Section] = &[
         ],
     },
     Section {
-        title: "Uppercase economics (Section 9.1)",
+        title: "Uppercase economics ()",
         note: "Latin A-Z and Cyrillic А-Я are direct codes and need no toggle; \
                letters without a direct code are where the toggle pays off",
         samples: &[
@@ -164,7 +164,7 @@ const SECTIONS: &[Section] = &[
         ],
     },
     Section {
-        title: "Unicode fallback (Section 10)",
+        title: "Unicode fallback ()",
         note: "anything outside the tables streams as raw UTF-8 after UNI_ON (236)",
         samples: &[
             ("Привет 🚀 мир", "Emoji inside Cyrillic"),

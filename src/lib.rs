@@ -33,10 +33,10 @@
 //! # }
 //! ```
 //!
-//! # Input Preprocessing
+//! # Input
 //!
-//! Section 10.3: Input strings must be in Unicode Normalization Form C (NFC).
-//! The encoder detects standalone combining marks and returns [`EncodeError::NotNfcNormalized`].
+//! Strings must be NFC-normalized; standalone combining marks are rejected with
+//! [`EncodeError::NotNfcNormalized`].
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -55,10 +55,10 @@ pub mod unicode_fallback;
 #[cfg(feature = "alloc")]
 pub mod alloc_api;
 
-// --- Flat re-exports: primary public crate surface ---
+// Primary public surface.
 
 pub use decode::{decode_into, max_decoded_len};
-pub use encode::{encode_into, max_encoded_len};
+pub use encode::{encode_into, max_encoded_len, CharPlan};
 pub use error::{DecodeError, EncodeError};
 pub use modifier::{Modifier, ModifierStack};
 pub use tables::{BASE_TABLE, CAPITALIZE_TABLE, MODIFIER_TABLE};
@@ -66,7 +66,5 @@ pub use tables::{BASE_TABLE, CAPITALIZE_TABLE, MODIFIER_TABLE};
 #[cfg(feature = "alloc")]
 pub use alloc_api::{decode, encode};
 
-/// Specification version implemented by this release.
-///
-/// Verified by test suite: changes to the specification version must be accompanied by test audits.
+/// Format version implemented by this release.
 pub const SPEC_VERSION: &str = "final-2026-08";

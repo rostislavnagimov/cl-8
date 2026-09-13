@@ -1,31 +1,22 @@
-//! Modifier buffering and stacking — Section 8.4 of the specification.
+//! Modifier buffering between base characters.
 //!
-//! # Rules
+//! Modifiers emit nothing on their own: they accumulate until a base character
+//! arrives, then apply diacritic first and capitalization second.
+//! `237, 238, 14` buffers `[case-shift, acute]`, takes base `e`, yields `é`, then `É`.
 //!
-//! When `CASE_SHIFT` is followed by another modifier instead of a base letter,
-//! it is buffered along with the modifier chain until the first base letter.
-//! Capitalization is applied to the resolved modified character.
-//!
-//! Example: `237, 238, 14` -> buffer `[case-shift, acute]` -> base 'e' -> acute produces
-//! 'é' -> case-shift capitalizes to 'É'.
-//!
-//! Two consecutive diacritic modifiers before a single base letter are undefined
-//! by the specification. The stack accepts at most one diacritic; a second one
-//! returns [`DecodeError::StackedDiacritics`].
+//! Two diacritics before one base character are undefined, so the second returns
+//! [`DecodeError::StackedDiacritics`].
 
 use crate::error::DecodeError;
 pub use crate::tables::Modifier;
 use crate::tables::{apply_modifier, codepoint_of, to_upper};
 
-/// Maximum number of modifiers allowed before a single base character.
-///
-/// Exactly two: one `case-shift` plus one diacritic (Section 8.4).
+/// Modifiers allowed before one base character: a case-shift plus a diacritic.
 pub const MAX_STACK: usize = 2;
 
-/// Modifier accumulator between base characters.
+/// Modifier accumulator, reset after every resolved base character.
 ///
-/// Reset occurs after every resolved base character.
-/// Zero-allocation, `Copy` value type stored directly in registers.
+/// A `Copy` value small enough to live in registers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ModifierStack {
     case_shift: bool,
@@ -87,26 +78,22 @@ impl ModifierStack {
         Ok(())
     }
 
-    /// Applies the accumulated modifiers to a base character code and resets the stack.
-    ///
-    /// Processing order: diacritic modifier is applied first, followed by capitalization.
-    /// Special case (Section 8.4): Turkish `İ` (`DotAbove` + `CASE_SHIFT` + `'i'`) resolves to `U+0130`.
+    /// Applies the buffered modifiers to a base code: diacritic first, then capitalization.
     ///
     /// # Errors
     ///
-    /// Returns [`DecodeError::UndefinedCombination`] if the (modifier, base) pair is not in the table.
+    /// [`DecodeError::UndefinedCombination`] if the pair is not in the table.
     pub fn resolve(&mut self, base: u8, position: usize) -> Result<u32, DecodeError> {
         let mut codepoint = codepoint_of(base).ok_or(DecodeError::UnknownByte {
             position,
             byte: base,
         })?;
 
-        // Special case for Turkish capital I with dot: DotAbove + CASE_SHIFT + 'i' (code 18) -> U+0130
+        // Turkish İ is the one composite that capitalization cannot reach from its base.
         if self.diacritic == Some(Modifier::DotAbove) && self.case_shift && base == 18 {
             return Ok(0x0130);
         }
 
-        // 1. Apply diacritic
         if let Some(diacritic) = self.diacritic {
             if let Some(modified) = apply_modifier(diacritic, base) {
                 codepoint = modified;
@@ -119,7 +106,6 @@ impl ModifierStack {
             }
         }
 
-        // 2. Apply case-shift
         if self.case_shift {
             if let Some(upper) = to_upper(codepoint) {
                 codepoint = upper;

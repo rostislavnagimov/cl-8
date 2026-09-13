@@ -69,7 +69,16 @@ fn main() {
 
         let mut counts: BTreeMap<char, usize> = BTreeMap::new();
 
-        println!("\nunicode fallback used for");
+        // Рамка блока — UNI_ON плюс терминатор, два байта сверх полезной нагрузки.
+        // На россыпи одиночных символов она и составляет всю переплату.
+        println!(
+            "\nunicode fallback: {} символов в {} блоках, {} байт полезных + {} на рамки",
+            text.chars().count(),
+            fallback_blocks,
+            text.len(),
+            fallback_blocks * 2
+        );
+        println!("unicode fallback used for");
         for ch in text.chars() {
             *counts.entry(ch).or_insert(0) += 1;
         }

@@ -28,12 +28,7 @@ std = ["alloc"]
 
 [dev-dependencies]
 proptest = "1.4"
-criterion = { version = "0.5", features = ["html_reports"] }
 unicode-normalization = "0.1.25"
-
-[[bench]]
-name = "cl8_bench"
-harness = false
 
 [profile.release]
 opt-level = 3
@@ -43,4 +38,8 @@ panic = "abort"
 
 [[example]]
 name = "war_and_peace"
+required-features = ["std"]
+
+[[example]]
+name = "metrics"
 required-features = ["std"]

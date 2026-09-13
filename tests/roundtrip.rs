@@ -3,14 +3,9 @@
 //! # Ограничение, зафиксированное явно
 //!
 //! Все генераторы выдают только NFC-нормализованные строки. Это не обход
-//! проблемы, а следствие раздела 10.3 спецификации: NFC — обязательный
-//! препроцессинг, кодировщик ненормализованный вход отвергает
-//! ([`cl8::EncodeError::NotNfcNormalized`]). Тест на NFD-вход существует
-//! отдельно и проверяет именно предсказуемый отказ, а не round-trip.
-//!
-//! # Состояние
-//!
-//! Тесты красные: ядро — скелет. Ожидаемый TDD-red.
+//! проблемы: NFC — обязательный препроцессинг, ненормализованный вход
+//! кодировщик отвергает ([`cl8::EncodeError::NotNfcNormalized`]). Отдельный
+//! тест проверяет именно предсказуемый отказ, а не round-trip.
 
 use proptest::prelude::*;
 
@@ -31,7 +26,7 @@ fn roundtrip(text: &str) -> Result<String, String> {
 /// Символы, кодируемые одним байтом из базовой таблицы.
 fn base_char() -> impl Strategy<Value = char> {
     (0usize..cl8::BASE_TABLE.len()).prop_map(|i| {
-        char::from_u32(cl8::BASE_TABLE[i]).expect("таблица содержит валидные скаляры")
+        char::from_u32(cl8::BASE_TABLE[i].into()).expect("таблица содержит валидные скаляры")
     })
 }
 
@@ -39,7 +34,7 @@ fn base_char() -> impl Strategy<Value = char> {
 fn modified_char() -> impl Strategy<Value = char> {
     (0usize..cl8::MODIFIER_TABLE.len()).prop_map(|i| {
         let (_, _, cp) = cl8::MODIFIER_TABLE[i];
-        char::from_u32(cp).expect("таблица модификаторов содержит валидные скаляры")
+        char::from_u32(cp.into()).expect("таблица модификаторов содержит валидные скаляры")
     })
 }
 
@@ -59,7 +54,7 @@ fn fallback_char() -> impl Strategy<Value = char> {
 
 /// Смешанная строка: базовые + диакритика + фоллбэк вперемешку.
 ///
-/// Именно этот случай — главный аргумент спеки (раздел 12), и именно на нём
+/// Именно этот случай — главный аргумент кодировки, и именно на нём
 /// ломаются переходы в юникод-режим и обратно.
 fn mixed_string() -> impl Strategy<Value = String> {
     prop::collection::vec(
@@ -164,7 +159,7 @@ proptest! {
 
 /// NFD-вход обязан давать предсказуемый отказ, а не round-trip.
 ///
-/// Раздел 10.3 требует NFC. «é» как e + U+0301 — ровно тот случай, ради
+/// Формат требует NFC. «é» как e + U+0301 — ровно тот случай, ради
 /// которого введена [`cl8::EncodeError::NotNfcNormalized`].
 #[test]
 fn nfd_input_is_rejected_predictably() {

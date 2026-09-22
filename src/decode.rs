@@ -17,13 +17,7 @@ use crate::modifier::ModifierStack;
 use crate::tables::{to_upper, Modifier};
 use crate::unicode_fallback::UnicodeMode;
 
-/// Decodes into `output`, returning the number of UTF-8 bytes written.
-///
-/// # Errors
-///
-/// [`DecodeError`] on a malformed stream or an output buffer that is too small.
-///
-/// # Examples
+/// Decodes into `output`. Returns UTF-8 bytes written.
 ///
 /// ```
 /// # use cl8::decode::decode_into;
@@ -63,11 +57,7 @@ impl Decoder {
         }
     }
 
-    /// Decodes the whole input into `output`.
-    ///
-    /// # Errors
-    ///
-    /// [`DecodeError`] on an invalid sequence or a full output buffer.
+    /// Decodes the whole input into `output`. Errors: [`DecodeError`] on invalid sequence or full buffer.
     pub fn decode(&mut self, input: &[u8], output: &mut [u8]) -> Result<usize, DecodeError> {
         while self.position < input.len() && !self.terminated {
             let byte = input[self.position];
@@ -94,8 +84,7 @@ impl Decoder {
             return self.handle_unicode_mode(byte, output);
         }
 
-        // Base characters occupy everything below the control range and carry the bulk
-        // of any stream, so they are tested before the control bytes rather than after.
+        // Base chars are below SPACE and dominate streams; test first.
         if byte < SPACE {
             return self.write_base(byte, output);
         }
@@ -143,10 +132,7 @@ impl Decoder {
         }
     }
 
-    /// Resolves a base byte through the modifier stack and CAPS mode, then writes it.
-    ///
-    /// Validity of `byte` is established by `resolve`, which needs the codepoint anyway —
-    /// a separate check here would look it up twice.
+    /// Resolves base byte through modifier stack and CAPS, then writes it.
     fn write_base(&mut self, byte: u8, output: &mut [u8]) -> Result<(), DecodeError> {
         let mut codepoint = self.modifier_stack.resolve(byte, self.position)?;
         if self.caps_state.applies() {
@@ -201,7 +187,6 @@ impl Decoder {
                 available: output.len(),
             });
         }
-        // Encodes straight into the destination: no stack buffer, no second copy.
         ch.encode_utf8(&mut output[self.output_offset..]);
         self.output_offset += len;
         Ok(())

@@ -1,36 +1,32 @@
 //! Error types.
-//!
-//! Both are `Copy` and allocation-free: context travels as offsets and bytes.
 
-/// An error that occurred while decoding a CL-8 byte sequence into UTF-8.
+/// Decoding error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DecodeError {
-    /// A byte that is neither a table character nor a control code: the reserved 226..=231.
+    /// Unknown or reserved byte value.
     UnknownByte {
-        /// Byte offset from the start of the input stream.
+        /// Byte offset in input.
         position: usize,
-        /// The unassigned byte value.
+        /// Unassigned byte value.
         byte: u8,
     },
 
-    /// Two diacritics before one base letter — an undefined combination.
-    ///
-    /// `CASE_SHIFT` plus one diacritic is valid and does not trigger this.
+    /// Two consecutive diacritics.
     StackedDiacritics {
-        /// Position of the second diacritic modifier.
+        /// Byte offset of the second modifier.
         position: usize,
     },
 
-    /// A modifier occurred at the very end of the stream without a following base character.
+    /// Modifier without a following base character.
     DanglingModifier {
-        /// Position of the modifier.
+        /// Byte offset of the modifier.
         position: usize,
     },
 
-    /// The (modifier, base) pair has no entry in the table.
+    /// Undefined modifier and base combination.
     UndefinedCombination {
-        /// Position of the base character.
+        /// Byte offset of the base character.
         position: usize,
         /// Modifier control byte.
         modifier: u8,
@@ -38,51 +34,48 @@ pub enum DecodeError {
         base: u8,
     },
 
-    /// The input stream ended while Unicode fallback mode was still open.
+    /// Unterminated Unicode fallback mode.
     UnterminatedUnicodeMode {
-        /// Position of the `UNI_ON` byte that initiated the mode.
+        /// Byte offset of `UNI_ON`.
         opened_at: usize,
     },
 
-    /// Bytes inside a Unicode fallback block do not form valid canonical UTF-8.
+    /// Invalid UTF-8 in Unicode fallback block.
     InvalidUtf8InUnicodeMode {
-        /// Position of the start of the invalid sequence.
+        /// Byte offset of invalid sequence.
         position: usize,
     },
 
-    /// Encountered `BACKSPACE` when the output buffer was empty.
+    /// `BACKSPACE` on empty output buffer.
     NothingToErase {
-        /// Position of the `BACKSPACE` byte.
+        /// Byte offset of `BACKSPACE`.
         position: usize,
     },
 
-    /// Output buffer too small; [`crate::max_decoded_len`] gives a sufficient size.
+    /// Output buffer too small.
     OutputTooSmall {
-        /// Required buffer capacity in bytes.
+        /// Required capacity in bytes.
         needed: usize,
         /// Available capacity in bytes.
         available: usize,
     },
 }
 
-/// An error that occurred while encoding text into CL-8.
+/// Encoding error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum EncodeError {
-    /// Output buffer too small; [`crate::max_encoded_len`] gives a sufficient size.
+    /// Output buffer too small.
     OutputTooSmall {
-        /// Required buffer capacity in bytes.
+        /// Required capacity in bytes.
         needed: usize,
         /// Available capacity in bytes.
         available: usize,
     },
 
-    /// Input is not NFC-normalized: a standalone combining mark was found.
-    ///
-    /// The encoder does not normalize — that would need the full Unicode tables it
-    /// exists to avoid — so it rejects such input instead of mis-encoding it.
+    /// Input is not NFC-normalized.
     NotNfcNormalized {
-        /// Character offset of the standalone combining mark in the input.
+        /// Byte offset of combining mark.
         position: usize,
     },
 }

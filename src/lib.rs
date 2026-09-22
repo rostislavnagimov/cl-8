@@ -1,42 +1,22 @@
-//! # CL-8: Compact 8-bit Cyrillic-Latin Text Encoding
-//!
-//! CL-8 is a high-performance, compact 8-bit text encoding designed for mixed Cyrillic and Latin
-//! text with `no_std`, zero-allocation, and zero runtime dependencies.
-//!
-//! Each base character is encoded into exactly one byte (0–219). Diacritic combinations are encoded
-//! using 14 modifier prefixes into 2 bytes, while unsupported Unicode characters (emojis, CJK, etc.)
-//! are seamlessly handled via an inline Unicode fallback mode.
-//!
-//! # API Levels
-//!
-//! Core (`default`): zero-allocation, `no_std` compatible:
+//! Compact 8-bit Cyrillic-Latin text encoding.
 //!
 //! ```
-//! use cl8::{encode_into, decode_into};
+//! use cl8::{decode_into, encode_into};
 //!
-//! let mut enc_buf = [0u8; 64];
-//! let n = encode_into("Hello, мир!", &mut enc_buf).unwrap();
+//! let mut enc = [0u8; 64];
+//! let n = encode_into("Hello, мир!", &mut enc).unwrap();
 //!
-//! let mut dec_buf = [0u8; 64];
-//! let m = decode_into(&enc_buf[..n], &mut dec_buf).unwrap();
-//! let text = core::str::from_utf8(&dec_buf[..m]).unwrap();
-//! assert_eq!(text, "Hello, мир!");
+//! let mut dec = [0u8; 64];
+//! let m = decode_into(&enc[..n], &mut dec).unwrap();
+//! assert_eq!(core::str::from_utf8(&dec[..m]).unwrap(), "Hello, мир!");
 //! ```
-//!
-//! Allocating API (`feature = "alloc"` or `feature = "std"`):
 //!
 //! ```
 //! # #[cfg(feature = "alloc")] {
 //! let bytes = cl8::encode("Hello, мир!").unwrap();
-//! let text = cl8::decode(&bytes).unwrap();
-//! assert_eq!(text, "Hello, мир!");
+//! assert_eq!(cl8::decode(&bytes).unwrap(), "Hello, мир!");
 //! # }
 //! ```
-//!
-//! # Input
-//!
-//! Strings must be NFC-normalized; standalone combining marks are rejected with
-//! [`EncodeError::NotNfcNormalized`].
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![forbid(unsafe_code)]
@@ -55,8 +35,6 @@ pub mod unicode_fallback;
 #[cfg(feature = "alloc")]
 pub mod alloc_api;
 
-// Primary public surface.
-
 pub use decode::{decode_into, max_decoded_len};
 pub use encode::{encode_into, max_encoded_len, CharPlan};
 pub use error::{DecodeError, EncodeError};
@@ -66,5 +44,5 @@ pub use tables::{BASE_TABLE, CAPITALIZE_TABLE, MODIFIER_TABLE};
 #[cfg(feature = "alloc")]
 pub use alloc_api::{decode, encode};
 
-/// Format version implemented by this release.
+/// Implemented format version.
 pub const SPEC_VERSION: &str = "final-2026-08";

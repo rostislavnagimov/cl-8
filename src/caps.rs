@@ -1,122 +1,128 @@
-//! Uppercase run segmentation and CAPS-toggle logic — Section 9.1 of the specification.
-//!
-//! # Compression Economics
-//!
-//! | Run Length | Prefixes (`case-shift` × N) | Toggle (`CAPS_ON` ... `CAPS_OFF`) | Optimal Strategy |
-//! |---|---|---|---|
-//! | 1 | +1 byte | +2 bytes | Prefix |
-//! | 2 | +2 bytes | +2 bytes | Equivalent (Prefix preferred) |
-//! | 3 | +3 bytes | +2 bytes | Toggle |
-//! | N | +N bytes | +2 bytes | Toggle |
-//!
-//! The threshold is defined by [`crate::consts::CAPS_TOGGLE_THRESHOLD`]. When equivalent (length 2),
-//! prefixes are chosen because they leave no open state, increasing stream resilience.
+//! Uppercase run tracking and strategies.
 
-/// Strategy for encoding a specific uppercase run.
+use crate::encode::CharPlan;
+
+/// Run encoding strategy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapsStrategy {
-    /// Use `CASE_SHIFT` before each letter (for runs of length 1–2).
+    /// Prefix each character with `CASE_SHIFT`.
     Prefix,
-    /// Wrap the run with `CAPS_ON` … `CAPS_OFF` (for runs of length 3 or more).
+    /// Wrap run with `CAPS_ON` and `CAPS_OFF`.
     Toggle,
 }
 
-/// A contiguous run of uppercase characters in the input text.
+/// Uppercase run metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CapsRun {
-    /// Character offset (not byte offset) in the input where the run starts.
+    /// Character offset in input where the run starts.
     pub start: usize,
     /// Length of the run in characters.
     pub len: usize,
-    /// Selected encoding strategy for this run.
+    /// Encoding strategy for this run.
     pub strategy: CapsStrategy,
 }
 
-/// Decoder state for tracking active uppercase mode.
+/// Uppercase mode state tracker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CapsState {
     active: bool,
 }
 
 impl CapsState {
-    /// Creates a default disabled caps state.
+    /// Creates disabled state.
     #[must_use]
     pub const fn new() -> Self {
         Self { active: false }
     }
 
-    /// Handles `CAPS_ON` control byte.
+    /// Handles `CAPS_ON`.
     pub fn turn_on(&mut self) {
         self.active = true;
     }
 
-    /// Handles `CAPS_OFF` control byte.
+    /// Handles `CAPS_OFF`.
     pub fn turn_off(&mut self) {
         self.active = false;
     }
 
-    /// Returns `true` if uppercase mode is currently active.
+    /// Returns `true` if uppercase mode is active.
     #[must_use]
     pub const fn applies(&self) -> bool {
         self.active
     }
 }
 
-/// Selects the optimal encoding strategy for an uppercase run of known length.
+/// Selects strategy for a run with `shifts` case-shifted characters.
 #[must_use]
 #[inline]
-pub const fn strategy_for(run_len: usize) -> CapsStrategy {
-    if run_len >= crate::consts::CAPS_TOGGLE_THRESHOLD {
+pub const fn strategy_for(shifts: usize) -> CapsStrategy {
+    if shifts >= crate::consts::CAPS_TOGGLE_THRESHOLD {
         CapsStrategy::Toggle
     } else {
         CapsStrategy::Prefix
     }
 }
 
-/// Identifies all uppercase runs in `text` and determines the optimal strategy for each.
-///
-/// Writes results into the pre-allocated slice `out` and returns the number of runs found.
-///
-/// # Errors
-///
-/// Returns `None` if the number of runs exceeds `out.len()`.
-pub fn segment(text: &str, out: &mut [CapsRun]) -> Option<usize> {
-    let mut out_idx = 0usize;
-    let mut current_start = 0usize;
-    let mut current_len = 0usize;
+/// Returns `true` if `ch` is unaffected by uppercase mode.
+fn is_caps_neutral(ch: char, plan: CharPlan) -> bool {
+    match plan {
+        CharPlan::Control(_) => true,
+        CharPlan::Base(_) => crate::tables::to_upper(ch as u32).is_none(),
+        _ => false,
+    }
+}
 
-    for (char_idx, ch) in text.chars().enumerate() {
-        if crate::tables::from_upper_to_lower(ch as u32).is_some() {
-            if current_len == 0 {
-                current_start = char_idx;
-                current_len = 1;
-            } else {
-                current_len += 1;
-            }
-        } else if current_len > 0 {
-            if out_idx >= out.len() {
-                return None;
-            }
-            out[out_idx] = CapsRun {
-                start: current_start,
-                len: current_len,
-                strategy: strategy_for(current_len),
-            };
-            out_idx += 1;
-            current_len = 0;
+/// Scans the remaining characters to determine run length and case shift count.
+#[must_use]
+pub fn scan_run(rest: &str) -> (usize, usize) {
+    let mut run_len = 1usize;
+    let mut shifts = 1usize;
+    let mut pending = 0usize;
+
+    for ch in rest.chars() {
+        let plan = CharPlan::of(ch);
+        if plan.needs_case_shift() {
+            run_len += pending + 1;
+            pending = 0;
+            shifts += 1;
+        } else if is_caps_neutral(ch, plan) {
+            pending += 1;
+        } else {
+            break;
         }
     }
 
-    if current_len > 0 {
+    (run_len, shifts)
+}
+
+/// Identifies uppercase runs in `text`. Returns `None` if `out` is too small.
+pub fn segment(text: &str, out: &mut [CapsRun]) -> Option<usize> {
+    let mut out_idx = 0usize;
+    let mut skip = 0usize;
+
+    for (char_idx, ch) in text.chars().enumerate() {
+        if skip > 0 {
+            skip -= 1;
+            continue;
+        }
+        if !CharPlan::of(ch).needs_case_shift() {
+            continue;
+        }
+        let tail_start = text
+            .char_indices()
+            .nth(char_idx)
+            .map_or(text.len(), |(i, c)| i + c.len_utf8());
+        let (len, shifts) = scan_run(&text[tail_start..]);
         if out_idx >= out.len() {
             return None;
         }
         out[out_idx] = CapsRun {
-            start: current_start,
-            len: current_len,
-            strategy: strategy_for(current_len),
+            start: char_idx,
+            len,
+            strategy: strategy_for(shifts),
         };
         out_idx += 1;
+        skip = len - 1;
     }
 
     Some(out_idx)

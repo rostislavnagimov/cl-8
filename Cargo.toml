@@ -1,26 +1,16 @@
 [package]
 name = "cl-8"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
-rust-version = "1.74"
 description = "High-performance compact 8-bit Cyrillic-Latin text encoding (no_std, zero-allocation)"
-authors = ["Rostislav Nagimov"]
-license = "MIT OR Apache-2.0"
+license = "MIT"
 repository = "https://github.com/rostislavnagimov/cl-8"
-homepage = "https://github.com/rostislavnagimov/cl-8"
-documentation = "https://docs.rs/cl-8"
-readme = "README.md"
 keywords = ["encoding", "cyrillic", "compression", "no-std", "unicode"]
 categories = ["encoding", "no-std", "no-std::no-alloc", "text-processing", "compression"]
-# Whitelist: only what is required to build and document the crate.
-# Tests, benches, corpus, and working documents never reach the published package.
 include = [
     "/src/",
     "/tables/*.csv",
     "/build.rs",
-    "/README.md",
-    "/LICENSE-MIT",
-    "/LICENSE-APACHE",
 ]
 
 [lib]
@@ -36,17 +26,9 @@ alloc = []
 # Standard library support: includes alloc and implements std::error::Error for error types
 std = ["alloc"]
 
-[dependencies]
-# The core library has zero runtime dependencies.
-
 [dev-dependencies]
 proptest = "1.4"
-criterion = { version = "0.5", features = ["html_reports"] }
 unicode-normalization = "0.1.25"
-
-[[bench]]
-name = "cl8_bench"
-harness = false
 
 [profile.release]
 opt-level = 3
@@ -56,4 +38,8 @@ panic = "abort"
 
 [[example]]
 name = "war_and_peace"
+required-features = ["std"]
+
+[[example]]
+name = "metrics"
 required-features = ["std"]

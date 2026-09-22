@@ -1,112 +1,66 @@
-//! Lookup tables generated at compile time by `build.rs` from `tables/*.csv`.
-//!
-//! The generated table file resides in `OUT_DIR` and is included via `include!`.
-//! It is omitted from the source tree to ensure strict consistency with the CSV sources.
+//! Lookup tables.
 
 include!(concat!(env!("OUT_DIR"), "/tables.rs"));
 
-/// Returns the Unicode codepoint for a given CL-8 byte code.
-///
-/// Returns `None` for unassigned codes: the reserved range 220..=231
-/// and control codes 232..=255.
+use crate::consts::MODIFIER_FIRST;
+
+/// Codepoint for a CL-8 code, or `None` if unassigned.
 #[must_use]
 #[inline]
 pub fn codepoint_of(code: u8) -> Option<u32> {
-    BASE_TABLE.get(code as usize).copied()
+    BASE_TABLE.get(code as usize).copied().map(u32::from)
 }
 
-/// Returns the CL-8 byte code for a Unicode codepoint.
-///
-/// For over 95% of standard text (digits, Latin `a-z`/`A-Z`, basic Cyrillic `а-я`/`А-Я`),
-/// the code is resolved in $O(1)$ time using direct arithmetic.
-/// For punctuation and supplementary characters (codes 69..160), a linear scan over the table slice is used.
+/// CL-8 code for a codepoint.
 #[must_use]
 #[inline]
 #[allow(clippy::cast_possible_truncation)]
 pub fn code_of(codepoint: u32) -> Option<u8> {
     match codepoint {
-        0x0030..=0x0039 => Some((codepoint - 0x0030) as u8),
-        0x0061..=0x007A => Some((codepoint - 0x0061 + 10) as u8),
+        0x0030..=0x0039 => return Some((codepoint - 0x0030) as u8),
+        0x0061..=0x007A => return Some((codepoint - 0x0061 + 10) as u8),
         0x0430..=0x044F => {
             let offset = codepoint - 0x0430;
-            if offset < 6 {
-                Some((36 + offset) as u8)
+            return Some(if offset < 6 {
+                (36 + offset) as u8
             } else {
-                Some((36 + offset + 1) as u8)
-            }
+                (36 + offset + 1) as u8
+            });
         }
-        0x0451 => Some(42),
-        0x0041..=0x005A => Some((codepoint - 0x0041 + 161) as u8),
+        0x0451 => return Some(42),
+        0x0041..=0x005A => return Some((codepoint - 0x0041 + 161) as u8),
         0x0410..=0x042F => {
             let offset = codepoint - 0x0410;
-            if offset < 6 {
-                Some((187 + offset) as u8)
+            return Some(if offset < 6 {
+                (187 + offset) as u8
             } else {
-                Some((187 + offset + 1) as u8)
-            }
+                (187 + offset + 1) as u8
+            });
         }
-        0x0401 => Some(193),
-        _ => {
-            // Search supplementary Cyrillic, special symbols, and punctuation (codes 69..160)
-            let mut i = 69usize;
-            let limit = BASE_TABLE.len().min(161);
-            while i < limit {
-                if BASE_TABLE[i] == codepoint {
-                    return Some(i as u8);
-                }
-                i += 1;
-            }
-            if BASE_TABLE.len() > 220 {
-                let mut j = 220usize;
-                while j < BASE_TABLE.len() {
-                    if BASE_TABLE[j] == codepoint {
-                        return Some(j as u8);
-                    }
-                    j += 1;
-                }
-            }
-            None
-        }
+        0x0401 => return Some(193),
+        _ => {}
     }
+
+    code_of_indexed(codepoint)
 }
 
-/// Applies a diacritic modifier to a base character code.
-///
-/// Returns `None` if the combination is undefined in Section 8.3 of the specification.
-#[must_use]
-pub fn apply_modifier(modifier: Modifier, base: u8) -> Option<u32> {
-    let mut i = 0usize;
-    while i < MODIFIER_TABLE.len() {
-        let (m, b, result) = MODIFIER_TABLE[i];
-        if m as u8 == modifier as u8 && b == base {
-            return Some(result);
-        }
-        i += 1;
+/// Binary search over [`BASE_BY_CP`] for non-arithmetic codes.
+#[inline(never)]
+fn code_of_indexed(codepoint: u32) -> Option<u8> {
+    let Ok(needle) = u16::try_from(codepoint) else {
+        return None;
+    };
+    if needle > BASE_CP_MAX {
+        return None;
     }
-    None
-}
 
-/// Returns the uppercase form of a Unicode codepoint.
-///
-/// First applies algorithmic shifts (`-0x20`) for standard ASCII `a..z` and Cyrillic `а..я`,
-/// then performs a binary search over `CAPITALIZE_TABLE`. Returns `None` if the character
-/// has no uppercase counterpart (digits, punctuation, symbols).
-#[must_use]
-pub fn to_upper(codepoint: u32) -> Option<u32> {
-    // Latin a..z and basic Cyrillic а..я are regular pairs with 0x20 shift
-    if matches!(codepoint, 0x0061..=0x007A | 0x0430..=0x044F) {
-        return Some(codepoint - 0x20);
-    }
-    if codepoint == 0x0451 {
-        return Some(0x0401);
-    }
     let mut lo = 0usize;
-    let mut hi = CAPITALIZE_TABLE.len();
+    let mut hi = BASE_BY_CP.len();
     while lo < hi {
         let mid = lo + (hi - lo) / 2;
-        let (lower, upper) = CAPITALIZE_TABLE[mid];
-        match lower.cmp(&codepoint) {
-            core::cmp::Ordering::Equal => return Some(upper),
+        let code = BASE_BY_CP[mid];
+        match BASE_TABLE[code as usize].cmp(&needle) {
+            core::cmp::Ordering::Equal => return Some(code),
             core::cmp::Ordering::Less => lo = mid + 1,
             core::cmp::Ordering::Greater => hi = mid,
         }
@@ -114,47 +68,99 @@ pub fn to_upper(codepoint: u32) -> Option<u32> {
     None
 }
 
-/// Finds the `(Modifier, base_code)` pair that produces the given composite codepoint.
+/// Applies a diacritic modifier to a base code.
 #[must_use]
-pub fn find_modifier_pair_for_codepoint(codepoint: u32) -> Option<(Modifier, u8)> {
-    let mut i = 0usize;
-    while i < MODIFIER_TABLE.len() {
-        let (modifier, base, result) = MODIFIER_TABLE[i];
-        if result == codepoint {
-            return Some((modifier, base));
+#[inline]
+pub fn apply_modifier(modifier: Modifier, base: u8) -> Option<u32> {
+    let group = (modifier as u8).wrapping_sub(MODIFIER_FIRST) as usize;
+    if group + 1 >= MOD_OFFSETS.len() {
+        return None;
+    }
+    let mut lo = MOD_OFFSETS[group] as usize;
+    let mut hi = MOD_OFFSETS[group + 1] as usize;
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let (_, b, result) = MODIFIER_TABLE[mid];
+        match b.cmp(&base) {
+            core::cmp::Ordering::Equal => return Some(u32::from(result)),
+            core::cmp::Ordering::Less => lo = mid + 1,
+            core::cmp::Ordering::Greater => hi = mid,
         }
-        i += 1;
     }
     None
 }
 
-/// Returns the lowercase form of an uppercase Unicode codepoint.
-///
-/// First applies algorithmic shifts (`+0x20`) for standard ASCII `A..Z` and Cyrillic `А..Я`,
-/// handles special cases (e.g. Turkish `İ`), and performs a binary search over `REVERSE_CAPITALIZE_TABLE`.
-/// Returns `None` if the character has no lowercase counterpart.
+/// Uppercase form of a codepoint.
 #[must_use]
+#[inline]
+pub fn to_upper(codepoint: u32) -> Option<u32> {
+    if matches!(codepoint, 0x0061..=0x007A | 0x0430..=0x044F) {
+        return Some(codepoint - 0x20);
+    }
+    if codepoint == 0x0451 {
+        return Some(0x0401);
+    }
+    let needle = u16::try_from(codepoint).ok()?;
+    let mut lo = 0usize;
+    let mut hi = CAPITALIZE_TABLE.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let (lower, upper) = CAPITALIZE_TABLE[mid];
+        match lower.cmp(&needle) {
+            core::cmp::Ordering::Equal => return Some(u32::from(upper)),
+            core::cmp::Ordering::Less => lo = mid + 1,
+            core::cmp::Ordering::Greater => hi = mid,
+        }
+    }
+    None
+}
+
+/// Returns `(Modifier, base)` pair for a composite codepoint.
+#[must_use]
+#[inline]
+pub fn find_modifier_pair_for_codepoint(codepoint: u32) -> Option<(Modifier, u8)> {
+    let Ok(needle) = u16::try_from(codepoint) else {
+        return None;
+    };
+    if !(MOD_RESULT_MIN..=MOD_RESULT_MAX).contains(&needle) {
+        return None;
+    }
+    let mut lo = 0usize;
+    let mut hi = MOD_BY_RESULT.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let (modifier, base, result) = MODIFIER_TABLE[MOD_BY_RESULT[mid] as usize];
+        match result.cmp(&needle) {
+            core::cmp::Ordering::Equal => return Some((modifier, base)),
+            core::cmp::Ordering::Less => lo = mid + 1,
+            core::cmp::Ordering::Greater => hi = mid,
+        }
+    }
+    None
+}
+
+/// Lowercase form of an uppercase codepoint.
+#[must_use]
+#[inline]
 pub fn from_upper_to_lower(codepoint: u32) -> Option<u32> {
-    // Latin A..Z and basic Cyrillic А..Я are regular pairs with 0x20 shift
     if matches!(codepoint, 0x0041..=0x005A | 0x0410..=0x042F) {
         return Some(codepoint + 0x20);
     }
     if codepoint == 0x0401 {
         return Some(0x0451);
     }
-    // Turkish capital I with dot (U+0130) -> lowercase i (U+0069)
     if codepoint == 0x0130 {
         return Some(0x0069);
     }
 
-    // Search in the reverse capitalization table (sorted by uppercase codepoints)
+    let needle = u16::try_from(codepoint).ok()?;
     let mut lo = 0usize;
     let mut hi = REVERSE_CAPITALIZE_TABLE.len();
     while lo < hi {
         let mid = lo + (hi - lo) / 2;
         let (upper, lower) = REVERSE_CAPITALIZE_TABLE[mid];
-        match upper.cmp(&codepoint) {
-            core::cmp::Ordering::Equal => return Some(lower),
+        match upper.cmp(&needle) {
+            core::cmp::Ordering::Equal => return Some(u32::from(lower)),
             core::cmp::Ordering::Less => lo = mid + 1,
             core::cmp::Ordering::Greater => hi = mid,
         }

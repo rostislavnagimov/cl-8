@@ -4,7 +4,7 @@
 //! каталога. Тест НЕ падает при неполном корпусе — иначе вся сборка была бы
 //! красной до окончания сбора текстов, который является отдельной задачей.
 //! Он падает, если файл присутствует, но нарушает требования
-//! `agent3_corpus.md`: BOM, невалидный UTF-8, отсутствие пометки о NFC.
+//! `требований к корпусу`: BOM, невалидный UTF-8, отсутствие пометки о NFC.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -53,10 +53,9 @@ fn manifest_has_no_duplicate_files() {
 #[test]
 fn manifest_lists_the_named_languages_from_spec_section_11() {
     // 38 поимённо названных языков + 5 стресс-файлов.
-    //
-    // Раздел 11 спеки в заголовке заявляет 41 язык, но поимённо называет 38
+    // Список языков в заголовке заявляет 41, но поимённо называет 38
     // (группа диакритики помечена «(29)», перечисляет 26). Расхождение
-    // зафиксировано в шапке манифеста и в docs/DATA_TABLES.md; здесь
+    // зафиксировано в шапке манифеста и в таблицах; здесь
     // проверяется ровно то, что реально перечислено, без домысливания.
     let entries = manifest_entries();
     let stress = [
@@ -72,7 +71,7 @@ fn manifest_lists_the_named_languages_from_spec_section_11() {
         .count();
     assert_eq!(
         languages, 38,
-        "ожидалось 38 языковых файлов — столько языков раздел 11 называет поимённо"
+        "ожидалось 38 языковых файлов — столько языков формат называет поимённо"
     );
     for s in stress {
         assert!(
@@ -84,8 +83,8 @@ fn manifest_lists_the_named_languages_from_spec_section_11() {
 
 #[test]
 fn mixed_file_is_present_in_manifest() {
-    // Раздел 12 спеки: смешанный текст — главный аргумент питча, и он же
-    // выделен особо в agent4_benchmarks.md. Потерять его нельзя.
+    // Смешанный текст — главный аргумент кодировки, и он же
+    // особо важен для замеров. Потерять его нельзя.
     assert!(
         manifest_entries().iter().any(|(f, _)| f == "mixed.txt"),
         "mixed.txt обязан быть в манифесте"
@@ -107,14 +106,14 @@ fn present_corpus_files_satisfy_requirements() {
 
         assert!(
             !bytes.starts_with(&[0xEF, 0xBB, 0xBF]),
-            "{file} ({lang}): найден BOM — раздел 10.3 требует строгий UTF-8 без BOM"
+            "{file} ({lang}): найден BOM — формат требует строгий UTF-8 без BOM"
         );
         let text = std::str::from_utf8(&bytes)
             .unwrap_or_else(|e| panic!("{file} ({lang}): невалидный UTF-8: {e}"));
         assert!(
             text.lines().next().is_some_and(|l| l.contains("NFC-normalized")),
             "{file} ({lang}): первая строка обязана содержать пометку `# NFC-normalized YYYY-MM-DD` \
-             — agent3_corpus.md требует подтверждения выполненной нормализации"
+             — требований к корпусу требует подтверждения выполненной нормализации"
         );
         let content_lines = text.lines().filter(|l| !l.starts_with('#')).count();
         assert!(

@@ -1,7 +1,7 @@
 //! Граничные случаи — явный список, по одному `#[test]` на случай.
 //!
-//! Отличие от `explicit_cases.rs`: там переносятся примеры ИЗ спеки, здесь —
-//! случаи, которые спека описывает правилом, но не иллюстрирует примером,
+//! Отличие от `explicit_cases.rs`: там зафиксированы явные примеры формата,
+//! здесь — случаи, покрытые правилом, но не проиллюстрированные примером,
 //! и точки отказа API (буферы, пустой вход, границы диапазонов).
 //!
 //! # Состояние
@@ -124,7 +124,7 @@ fn trailing_case_shift_without_base_is_an_error() {
 
 #[test]
 fn modifier_followed_by_service_byte_is_an_error() {
-    // Модификатор проецируется на «следующий символ таблицы» (раздел 8.1).
+    // Модификатор проецируется на «следующий символ таблицы».
     // Пробел символом таблицы в этом смысле не является.
     let mut buf = [0u8; 8];
     let r = decode_into(&[238, 232], &mut buf);
@@ -136,7 +136,7 @@ fn modifier_followed_by_service_byte_is_an_error() {
 
 #[test]
 fn repeated_case_shift_is_not_an_error() {
-    // Раздел 9.1 объявляет избыточный case-shift no-op внутри CAPS_ON.
+    // избыточный case-shift no-op внутри CAPS_ON.
     // Тот же принцип применён к двум case-shift подряд: избыточность,
     // а не ошибка. Диакритика при этом остаётся ограниченной одной штукой.
     let mut buf = [0u8; 8];
@@ -162,7 +162,7 @@ fn first_and_last_base_codes_decode() {
 
 #[test]
 fn digits_map_to_their_value() {
-    // Раздел 1: код совпадает со значением цифры.
+    // код совпадает со значением цифры.
     let mut buf = [0u8; 16];
     let n = decode_into(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], &mut buf).expect("цифры");
     assert_eq!(&buf[..n], b"0123456789");
@@ -192,7 +192,7 @@ fn single_fallback_character() {
 
 #[test]
 fn fallback_at_start_middle_and_end() {
-    // Переходы в юникод-режим и обратно — самая ломкая часть раздела 10.
+    // Переходы в юникод-режим и обратно — самая ломкая часть формат.
     for text in ["日ab", "a日b", "ab日", "日a日", "日日a"] {
         let mut enc = vec![0u8; cl8::max_encoded_len(text.len())];
         let n = encode_into(text, &mut enc).unwrap_or_else(|e| panic!("{text}: {e:?}"));
@@ -214,7 +214,7 @@ fn arabic_only_input_is_pure_fallback() {
 
 #[test]
 fn fallback_costs_more_than_utf8_and_that_is_expected() {
-    // Раздел 12 честно фиксирует: на языках вне таблицы CL-8 проигрывает.
+    // : на языках вне таблицы CL-8 проигрывает.
     // Тест закрепляет это как ожидаемое поведение, а не регрессию.
     let text = "日本語のテキスト";
     let mut enc = vec![0u8; cl8::max_encoded_len(text.len())];
@@ -226,7 +226,7 @@ fn fallback_costs_more_than_utf8_and_that_is_expected() {
 
 #[test]
 fn caps_on_without_caps_off_at_end_of_input() {
-    // Спекой не зафиксировано (см. открытый вопрос 4 в explicit_cases.rs).
+    // Формат этого не фиксирует (открытый вопрос 4 в explicit_cases.rs).
     // Тест не утверждает конкретный результат — только что нет паники
     // и что поведение детерминировано.
     let mut buf = [0u8; 8];
@@ -242,7 +242,7 @@ fn caps_on_without_caps_off_at_end_of_input() {
 
 #[test]
 fn backspace_on_empty_output() {
-    // Спекой не зафиксировано (открытый вопрос 2). Проверяем отсутствие паники
+    // Формат этого не фиксирует (открытый вопрос 2). Проверяем отсутствие паники
     // и детерминированность, не конкретный вариант.
     let mut buf = [0u8; 8];
     let r = decode_into(&[235], &mut buf);
@@ -262,7 +262,7 @@ fn multiple_backspaces_do_not_underflow() {
 #[test]
 fn cancel_then_more_text() {
     // CANCEL сбрасывает сообщение; что происходит с байтами после него,
-    // спека не уточняет (открытый вопрос 1).
+    // формат не уточняет (открытый вопрос 1).
     let mut buf = [0u8; 16];
     let r = decode_into(&[10, 255, 11], &mut buf);
     assert!(r.is_ok(), "CANCEL не должен приводить к ошибке: {r:?}");
@@ -294,10 +294,10 @@ fn alternating_caps_runs() {
 
 #[test]
 fn all_modifier_pairs_roundtrip() {
-    // Исчерпывающая проверка таблицы 8.3: каждая из 60 пар обязана пережить
+    // Исчерпывающая проверка таблицы модификаторов: каждая из 60 пар обязана пережить
     // round-trip. Дешевле property-теста и покрывает таблицу полностью.
     for (modifier, base, result) in cl8::MODIFIER_TABLE {
-        let expected = char::from_u32(result).expect("валидный скаляр");
+        let expected = char::from_u32(result.into()).expect("валидный скаляр");
         let mut dec = [0u8; 8];
         let m = decode_into(&[modifier as u8, base], &mut dec)
             .unwrap_or_else(|e| panic!("{modifier:?}+{base}: {e:?}"));
@@ -310,8 +310,8 @@ fn all_modifier_pairs_roundtrip() {
 fn all_capitalize_pairs_roundtrip() {
     // Каждое исключение капитализации обязано быть достижимо через case-shift.
     for (lower, upper) in cl8::CAPITALIZE_TABLE {
-        let lo = char::from_u32(lower).expect("валидный скаляр");
-        let up = char::from_u32(upper).expect("валидный скаляр");
+        let lo = char::from_u32(lower.into()).expect("валидный скаляр");
+        let up = char::from_u32(upper.into()).expect("валидный скаляр");
         let s = up.to_string();
         let mut enc = vec![0u8; cl8::max_encoded_len(s.len())];
         let n = encode_into(&s, &mut enc).unwrap_or_else(|e| panic!("{up} (из {lo}): {e:?}"));

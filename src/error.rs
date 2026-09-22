@@ -1,41 +1,32 @@
-//! Error types for encoding and decoding.
-//!
-//! Both enums are zero-allocation and `Copy`, designed to operate in `no_std` environments
-//! without an allocator. Error context is conveyed via numeric offsets and bytes.
+//! Error types.
 
-/// An error that occurred while decoding a CL-8 byte sequence into UTF-8.
+/// Decoding error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DecodeError {
-    /// Encountered a byte that corresponds neither to a table character nor a control code.
-    ///
-    /// Occurs for reserved codes 220..=231 which are unassigned in the specification.
+    /// Unknown or reserved byte value.
     UnknownByte {
-        /// Byte offset from the start of the input stream.
+        /// Byte offset in input.
         position: usize,
-        /// The unassigned byte value.
+        /// Unassigned byte value.
         byte: u8,
     },
 
-    /// Two diacritic modifiers occurred in succession before a single base letter.
-    ///
-    /// Section 8.4 declares multiple stacked diacritics undefined and requires
-    /// treating them as input errors. `CASE_SHIFT` combined with a single diacritic
-    /// is valid and does not trigger this error.
+    /// Two consecutive diacritics.
     StackedDiacritics {
-        /// Position of the second diacritic modifier.
+        /// Byte offset of the second modifier.
         position: usize,
     },
 
-    /// A modifier occurred at the very end of the stream without a following base character.
+    /// Modifier without a following base character.
     DanglingModifier {
-        /// Position of the modifier.
+        /// Byte offset of the modifier.
         position: usize,
     },
 
-    /// The (modifier, base) pair is undefined in the specification table (Section 8.3).
+    /// Undefined modifier and base combination.
     UndefinedCombination {
-        /// Position of the base character.
+        /// Byte offset of the base character.
         position: usize,
         /// Modifier control byte.
         modifier: u8,
@@ -43,55 +34,48 @@ pub enum DecodeError {
         base: u8,
     },
 
-    /// The input stream ended while Unicode fallback mode was still open.
+    /// Unterminated Unicode fallback mode.
     UnterminatedUnicodeMode {
-        /// Position of the `UNI_ON` byte that initiated the mode.
+        /// Byte offset of `UNI_ON`.
         opened_at: usize,
     },
 
-    /// Bytes inside a Unicode fallback block do not form valid canonical UTF-8.
+    /// Invalid UTF-8 in Unicode fallback block.
     InvalidUtf8InUnicodeMode {
-        /// Position of the start of the invalid sequence.
+        /// Byte offset of invalid sequence.
         position: usize,
     },
 
-    /// Encountered `BACKSPACE` when the output buffer was empty.
+    /// `BACKSPACE` on empty output buffer.
     NothingToErase {
-        /// Position of the `BACKSPACE` byte.
+        /// Byte offset of `BACKSPACE`.
         position: usize,
     },
 
-    /// The provided output buffer is smaller than required for the decoded text.
-    ///
-    /// Callers can compute a guaranteed upper bound with [`crate::max_decoded_len`].
+    /// Output buffer too small.
     OutputTooSmall {
-        /// Required buffer capacity in bytes.
+        /// Required capacity in bytes.
         needed: usize,
         /// Available capacity in bytes.
         available: usize,
     },
 }
 
-/// An error that occurred while encoding text into CL-8.
+/// Encoding error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum EncodeError {
-    /// The provided output buffer is smaller than required for the encoded data.
-    ///
-    /// Callers can compute a guaranteed upper bound with [`crate::max_encoded_len`].
+    /// Output buffer too small.
     OutputTooSmall {
-        /// Required buffer capacity in bytes.
+        /// Required capacity in bytes.
         needed: usize,
         /// Available capacity in bytes.
         available: usize,
     },
 
-    /// Input is not normalized in Unicode Normalization Form C (NFC).
-    ///
-    /// Section 10.3 requires NFC preprocessing. The encoder detects standalone
-    /// combining marks and rejects them to prevent improper Unicode fallback delegation.
+    /// Input is not NFC-normalized.
     NotNfcNormalized {
-        /// Character offset of the standalone combining mark in the input.
+        /// Byte offset of combining mark.
         position: usize,
     },
 }

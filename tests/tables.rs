@@ -12,11 +12,12 @@ use cl8::tables::{
 
 #[test]
 fn base_table_matches_spec_budget() {
-    // Раздел 0: коды 0..=219 заполнены (русский uppercase), 220..=228 резерв, 229..=231 резерв, 232..=255 служебные.
-    // Обновлено: эмоджи заменены на русский uppercase, поэтому 220 кодов вместо 229
+    // коды 0..=225 заполнены, 226..=231 резерв, 232..=255 служебные.
+    // 0..=219 — базовый алфавит с русским uppercase.
+    // 220..=225 — CR, nbsp, узкий nbsp, мягкий перенос, ×, − (ранее уходили в фоллбэк).
     assert_eq!(
-        BASE_TABLE_LEN, 220,
-        "раздел 0 фиксирует 220 заполненных кодов (0..=219) с русским uppercase"
+        BASE_TABLE_LEN, 226,
+        "формат фиксирует 226 заполненных кодов (0..=225)"
     );
     assert_eq!(BASE_TABLE.len(), BASE_TABLE_LEN);
 }
@@ -25,7 +26,7 @@ fn base_table_matches_spec_budget() {
 fn base_table_codepoints_are_unique() {
     // Дубль означал бы, что один символ имеет два кода, и encode стал бы
     // неоднозначным. build.rs это проверяет; тест закрепляет инвариант.
-    let mut sorted: Vec<u32> = BASE_TABLE.to_vec();
+    let mut sorted: Vec<u16> = BASE_TABLE.to_vec();
     sorted.sort_unstable();
     let before = sorted.len();
     sorted.dedup();
@@ -40,7 +41,7 @@ fn base_table_codepoints_are_unique() {
 fn base_table_contains_only_valid_scalars() {
     for (code, cp) in BASE_TABLE.iter().enumerate() {
         assert!(
-            char::from_u32(*cp).is_some(),
+            char::from_u32((*cp).into()).is_some(),
             "код {code}: 0x{cp:04X} не является валидным Unicode-скаляром"
         );
     }
@@ -48,34 +49,34 @@ fn base_table_contains_only_valid_scalars() {
 
 #[test]
 fn base_table_layout_matches_spec_sections() {
-    // Точечная сверка границ блоков из разделов 1-7.
-    let at = |i: usize| char::from_u32(BASE_TABLE[i]).unwrap();
-    assert_eq!(at(0), '0', "раздел 1: код 0 — цифра 0");
-    assert_eq!(at(9), '9', "раздел 1: код 9 — цифра 9");
-    assert_eq!(at(10), 'a', "раздел 2: латиница начинается с кода 10");
-    assert_eq!(at(35), 'z', "раздел 2: латиница кончается кодом 35");
-    assert_eq!(at(36), 'а', "раздел 3: кириллица начинается с кода 36");
-    assert_eq!(at(42), 'ё', "раздел 3: ё имеет код 42");
-    assert_eq!(at(68), 'я', "раздел 3: кириллица база кончается кодом 68");
-    assert_eq!(at(69), 'і', "раздел 4: кириллица доп. начинается с кода 69");
-    assert_eq!(at(90), 'ӯ', "раздел 4: кириллица доп. кончается кодом 90");
+    // Точечная сверка границ блоков таблицы.
+    let at = |i: usize| char::from_u32(BASE_TABLE[i].into()).unwrap();
+    assert_eq!(at(0), '0', "формат: код 0 — цифра 0");
+    assert_eq!(at(9), '9', "формат: код 9 — цифра 9");
+    assert_eq!(at(10), 'a', "формат: латиница начинается с кода 10");
+    assert_eq!(at(35), 'z', "формат: латиница кончается кодом 35");
+    assert_eq!(at(36), 'а', "формат: кириллица начинается с кода 36");
+    assert_eq!(at(42), 'ё', "формат: ё имеет код 42");
+    assert_eq!(at(68), 'я', "формат: кириллица база кончается кодом 68");
+    assert_eq!(at(69), 'і', "формат: кириллица доп. начинается с кода 69");
+    assert_eq!(at(90), 'ӯ', "формат: кириллица доп. кончается кодом 90");
     assert_eq!(
         at(91),
         'ß',
-        "раздел 5: нераскладываемые начинаются с кода 91"
+        "формат: нераскладываемые начинаются с кода 91"
     );
-    assert_eq!(at(96), 'ı', "раздел 5: турецкая ı имеет код 96");
-    assert_eq!(at(97), '`', "раздел 6: пунктуация начинается с кода 97");
-    assert_eq!(at(160), '…', "раздел 6: пунктуация кончается кодом 160");
+    assert_eq!(at(96), 'ı', "формат: турецкая ı имеет код 96");
+    assert_eq!(at(97), '`', "формат: пунктуация начинается с кода 97");
+    assert_eq!(at(160), '…', "формат: пунктуация кончается кодом 160");
 }
 
 #[test]
 fn modifier_table_matches_spec_count() {
-    // Шапка спеки: 60 записей. Ранее CSV содержал 55 — данные потерялись
+    // Ожидается 60 записей. Ранее CSV содержал 55 — данные потерялись
     // при переносе из cl8_decode_tables.rs.
     assert_eq!(
         MODIFIER_TABLE_LEN, 60,
-        "раздел 8.3 фиксирует 60 пар (модификатор, база)"
+        "формат фиксирует 60 пар (модификатор, база)"
     );
 }
 
@@ -83,7 +84,7 @@ fn modifier_table_matches_spec_count() {
 fn modifier_results_are_unique() {
     // Ранее в CSV было 5 дублирующихся результатов (0x00E5, 0x0101, 0x0107,
     // 0x015F, 0x016B) — каждый вместе с неверным базовым кодом или диакритикой.
-    let mut results: Vec<u32> = MODIFIER_TABLE.iter().map(|(_, _, r)| *r).collect();
+    let mut results: Vec<u16> = MODIFIER_TABLE.iter().map(|(_, _, r)| *r).collect();
     results.sort_unstable();
     let before = results.len();
     results.dedup();
@@ -117,15 +118,13 @@ fn modifier_bases_exist_in_base_table() {
 
 #[test]
 fn every_modifier_has_at_least_two_targets() {
-    // Раздел 8.3: «модификатор оправдан, только если целевых букв >= 2».
-    //
-    // DotAbove — единственное исключение, и оно кажущееся. Спека называет две
+    // «модификатор оправдан, только если целевых букв >= 2».
+    // DotAbove — единственное исключение, и оно кажущееся. Названы две
     // цели: z и i, но i помечена «только в паре с case-shift, см. 8.4»: она
     // достижима правилом стекинга (251, 237, 18 -> İ), а не строкой таблицы.
     // Поэтому строк у DotAbove одна.
-    //
-    // Это не противоречие, а единственное прочтение, при котором правило «>= 2»
-    // и счётчик «60 записей» из шапки спеки согласуются между собой: считать
+    // // Это не противоречие, а единственное прочтение, при котором правило «>= 2»
+    // и счётчик «60 записей» согласуются между собой: считать
     // İ строкой таблицы дало бы 61. Проверка ниже закрепляет именно его.
     for m in Modifier::ALL {
         let rows = MODIFIER_TABLE.iter().filter(|(mm, _, _)| *mm == m).count();
@@ -156,13 +155,13 @@ fn dot_above_has_exactly_one_table_row() {
     // Турецкая İ обязана НЕ быть в таблице: она результат стекинга, не пары.
     assert!(
         !MODIFIER_TABLE.iter().any(|(_, _, r)| *r == 0x0130),
-        "İ (U+0130) не должна быть строкой таблицы модификаторов — раздел 8.4"
+        "İ (U+0130) не должна быть строкой таблицы модификаторов — формат"
     );
 }
 
 #[test]
 fn modifier_discriminants_match_service_codes() {
-    // Раздел 9: диакритические модификаторы занимают 238..=251.
+    // диакритические модификаторы занимают 238..=251.
     assert_eq!(Modifier::Acute as u8, 238);
     assert_eq!(Modifier::DotAbove as u8, 251);
     for m in Modifier::ALL {
@@ -188,15 +187,15 @@ fn modifier_from_byte_rejects_non_modifiers() {
 
 #[test]
 fn cedilla_and_comma_below_are_distinct() {
-    // Раздел 8.3 прямо предупреждает: ş (U+015F) и ș (U+0219) — разные
+    // ş (U+015F) и ș (U+0219) — разные
     // кодпойнты, обязаны быть разными модификаторами. Ранее CSV назначал
     // 0x015F обоим, что стирало румынский.
-    let cedilla: Vec<u32> = MODIFIER_TABLE
+    let cedilla: Vec<u16> = MODIFIER_TABLE
         .iter()
         .filter(|(m, _, _)| *m == Modifier::Cedilla)
         .map(|(_, _, r)| *r)
         .collect();
-    let comma: Vec<u32> = MODIFIER_TABLE
+    let comma: Vec<u16> = MODIFIER_TABLE
         .iter()
         .filter(|(m, _, _)| *m == Modifier::CommaBelow)
         .map(|(_, _, r)| *r)
@@ -230,13 +229,13 @@ fn capitalize_table_is_sorted_for_binary_search() {
 
 #[test]
 fn capitalize_table_count_is_documented() {
-    // Шапка спеки называет 88 (22+6+60). Фактически нужно 89: пропущена ё —
+    // Ожидалось 88 (22+6+60). Фактически нужно 89: пропущена ё —
     // её кодпойнт U+0451 вне диапазона U+0430..U+044F, и алгоритмическое
-    // правило -0x20 даёт U+0431 ('б'). Подробно: docs/DATA_TABLES.md.
+    // правило -0x20 даёт U+0431 ('б'). Подробно: таблицах.
     assert_eq!(
         CAPITALIZE_TABLE_LEN, 89,
         "ожидается 89 = 22 (кириллица доп.) + 6 (нераскладываемые) + 60 (результаты \
-         модификаторов) + 1 (ё). Спека называет 88, расхождение описано в docs/DATA_TABLES.md"
+         модификаторов) + 1 (ё); ожидалось 88, расхождение осознанное"
     );
 }
 
@@ -273,11 +272,11 @@ fn capitalize_entries_are_reachable() {
 
 #[test]
 fn every_modifier_result_has_a_capital_form() {
-    // Раздел 8.4 требует, чтобы case-shift работал над любым собранным
+    // case-shift обязан работать над любым собранным
     // результатом — значит все 60 обязаны иметь заглавную форму.
     for (m, b, result) in MODIFIER_TABLE {
         assert!(
-            cl8::tables::to_upper(result).is_some(),
+            cl8::tables::to_upper(result.into()).is_some(),
             "{m:?}+{b} даёт 0x{result:04X} без заглавной формы"
         );
     }
@@ -296,7 +295,7 @@ fn algorithmic_capitalization_covers_plain_letters() {
     // И не должны дублироваться в таблице исключений.
     for c in ['a', 'z', 'а', 'я'] {
         assert!(
-            !CAPITALIZE_TABLE.iter().any(|(l, _)| *l == c as u32),
+            !CAPITALIZE_TABLE.iter().any(|(l, _)| u32::from(*l) == c as u32),
             "{c} покрыт правилом и не должен быть в таблице исключений"
         );
     }
@@ -305,27 +304,27 @@ fn algorithmic_capitalization_covers_plain_letters() {
 #[test]
 fn lookup_helpers_are_mutually_inverse() {
     for (code, cp) in BASE_TABLE.iter().enumerate() {
-        assert_eq!(cl8::tables::codepoint_of(code as u8), Some(*cp));
-        assert_eq!(cl8::tables::code_of(*cp), Some(code as u8));
+        assert_eq!(cl8::tables::codepoint_of(code as u8), Some(u32::from(*cp)));
+        assert_eq!(cl8::tables::code_of(u32::from(*cp)), Some(code as u8));
     }
 }
 
 #[test]
 fn apply_modifier_matches_table() {
     for (m, base, result) in MODIFIER_TABLE {
-        assert_eq!(cl8::tables::apply_modifier(m, base), Some(result));
+        assert_eq!(cl8::tables::apply_modifier(m, base), Some(u32::from(result)));
     }
 }
 
 #[test]
 fn apply_modifier_returns_none_for_undefined_pairs() {
-    // Акут перед 'ж' (код 43) спекой не определён.
+    // Акут перед 'ж' (код 43) не определён.
     assert_eq!(cl8::tables::apply_modifier(Modifier::Acute, 43), None);
 }
 
 #[test]
 fn spec_version_is_pinned() {
-    // Смена версии спеки обязана ломать сборку тестов, а не проходить молча.
+    // Смена версии формата обязана ломать сборку тестов, а не проходить молча.
     assert_eq!(cl8::SPEC_VERSION, "final-2026-08");
 }
 
@@ -347,14 +346,14 @@ fn from_upper_to_lower_covers_all_capitalize_table_entries() {
     for &(lower, upper) in &CAPITALIZE_TABLE {
         // Исключение: турецкая ı (0x0131) капитализируется в I (0x0049),
         // но заглавная I по базовому правилу ASCII понижается до 'i' (0x0069).
-        // Это зафиксированное в разделе 11 спеки поведение.
+        // Это зафиксированное в формат поведение.
         if lower == 0x0131 {
-            assert_eq!(cl8::tables::from_upper_to_lower(upper), Some(0x0069));
+            assert_eq!(cl8::tables::from_upper_to_lower(upper.into()), Some(0x0069));
             continue;
         }
         assert_eq!(
-            cl8::tables::from_upper_to_lower(upper),
-            Some(lower),
+            cl8::tables::from_upper_to_lower(upper.into()),
+            Some(u32::from(lower)),
             "from_upper_to_lower не восстанавливает строчную форму для 0x{upper:04X} (ожидалось 0x{lower:04X})"
         );
     }
@@ -478,26 +477,80 @@ fn capitalization_roundtrip_for_all_supported_languages() {
 }
 
 #[test]
-fn caps_segmenter_works() {
+fn caps_segmenter_reports_only_runs_the_encoder_acts_on() {
     use cl8::caps::{segment, CapsRun, CapsStrategy};
 
-    let text = "Hello WORLD test ABC def";
-    let mut runs = [CapsRun {
+    let blank = CapsRun {
         start: 0,
         len: 0,
         strategy: CapsStrategy::Prefix,
-    }; 10];
-    let count = segment(text, &mut runs).expect("segmentation failed");
-    assert_eq!(count, 3);
-    assert_eq!(runs[0].start, 0);
-    assert_eq!(runs[0].len, 1);
-    assert_eq!(runs[0].strategy, CapsStrategy::Prefix);
+    };
 
-    assert_eq!(runs[1].start, 6);
-    assert_eq!(runs[1].len, 5);
+    // ASCII A-Z уже однобайтовые: CAPS-режим им ничего не экономит, раном они не являются.
+    let mut runs = [blank; 10];
+    let count = segment("Hello WORLD test ABC def", &mut runs).expect("сегментация");
+    assert_eq!(
+        count, 0,
+        "прямые однобайтовые заглавные не образуют ранов — режим не дал бы выигрыша"
+    );
+
+    // Č требует CASE_SHIFT, но в одиночку: префикс дешевле пары переключателей.
+    // ЄЇЂ — три подряд, выгоднее обернуть.
+    let mut runs = [blank; 10];
+    let count = segment("Čas ЄЇЂ zzz", &mut runs).expect("сегментация");
+    assert_eq!(count, 2);
+    assert_eq!((runs[0].start, runs[0].len), (0, 1));
+    assert_eq!(runs[0].strategy, CapsStrategy::Prefix);
+    assert_eq!((runs[1].start, runs[1].len), (4, 3));
     assert_eq!(runs[1].strategy, CapsStrategy::Toggle);
 
-    assert_eq!(runs[2].start, 17);
-    assert_eq!(runs[2].len, 3);
-    assert_eq!(runs[2].strategy, CapsStrategy::Toggle);
+    // Нейтральные символы продлевают ран бесплатно: один ран накрывает пробел.
+    let mut runs = [blank; 10];
+    let count = segment("ŻÓŁĆ GĘŚLĄ", &mut runs).expect("сегментация");
+    assert_eq!(count, 1);
+    assert_eq!((runs[0].start, runs[0].len), (0, 10));
+    assert_eq!(runs[0].strategy, CapsStrategy::Toggle);
+}
+
+#[test]
+fn caps_segmenter_agrees_with_the_encoder() {
+    use cl8::caps::{segment, CapsRun, CapsStrategy};
+    use cl8::consts::CAPS_ON;
+
+    // Публичный сегментатор и энкодер обязаны отвечать на один вопрос одинаково.
+    // Расхождение здесь означало бы вторую реализацию правила — ровно тот класс
+    // бага, из-за которого сегментатор раньше обещал Toggle для "WORLD".
+    let blank = CapsRun {
+        start: 0,
+        len: 0,
+        strategy: CapsStrategy::Prefix,
+    };
+    let cases = [
+        "Hello WORLD test ABC def",
+        "Čas ЄЇЂ zzz",
+        "ŻÓŁĆ GĘŚLĄ JAŹŃ",
+        "Če",
+        "ČŠŽ",
+        "ПРИВЕТ МОСКВА",
+        "",
+        "abc",
+        "İstanbul",
+    ];
+    for text in cases {
+        let mut runs = [blank; 32];
+        let count = segment(text, &mut runs).expect("сегментация");
+        let toggles = runs[..count]
+            .iter()
+            .filter(|r| r.strategy == CapsStrategy::Toggle)
+            .count();
+
+        let mut buf = vec![0u8; cl8::max_encoded_len(text.len())];
+        let n = cl8::encode_into(text, &mut buf).expect("кодирование");
+        let emitted = buf[..n].iter().filter(|&&b| b == CAPS_ON).count();
+
+        assert_eq!(
+            toggles, emitted,
+            "{text:?}: сегментатор насчитал {toggles} Toggle-ранов, энкодер выдал {emitted} байт CAPS_ON"
+        );
+    }
 }

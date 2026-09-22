@@ -1,17 +1,17 @@
-//! Code generator for CL-8 lookup tables.
+//! Generates `$OUT_DIR/tables.rs` from the CSV sources in `tables/`.
 //!
-//! Reads human-readable CSV sources from `tables/` and generates `$OUT_DIR/tables.rs`,
-//! which is included via `include!` in `src/tables.rs`.
+//! # Invariants checked while parsing
 //!
-//! # Build-time Validation Invariants
-//!
-//! 1. The `code` column in `base_table.csv` is strictly sequential from 0 without gaps or duplicates.
-//! 2. Codepoints in `base_table.csv` are unique.
-//! 3. Modifier combination results do not duplicate base table characters.
+//! 1. Codes run sequentially from 0, no gaps, no duplicates.
+//! 2. Codepoints are unique — one character cannot have two codes.
+//! 3. Modifier results do not duplicate base characters.
 //! 4. Modifier results are unique among themselves.
-//! 5. Every modifier's base character exists in `base_table.csv`.
-//! 6. Lowercase forms in `capitalize_table.csv` are reachable (in base table or via modifiers).
-//! 7. Capitalization pairs are not reflexive (`lower != upper`) and have no duplicates.
+//! 5. Every modifier's base exists in the base table.
+//! 6. Lowercase forms are reachable, directly or through a modifier.
+//! 7. Capitalization pairs are non-reflexive and unique.
+//! 8. Every codepoint fits in `u16`.
+//!
+//! A violation fails the build: an invalid table cannot compile.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -21,7 +21,7 @@ use std::path::Path;
 
 /// `(code, variant_name, doc_comment)`.
 ///
-/// Order must match control codes 238..=251 from Section 8.3 of the specification.
+/// Order must match control codes 238..=251.
 const MODIFIER_NAMES: [(u8, &str, &str); 14] = [
     (
         238,
@@ -59,7 +59,7 @@ const MODIFIER_NAMES: [(u8, &str, &str); 14] = [
     (
         251,
         "DotAbove",
-        "Dot above (˙). Target: z. For 'i', pairs with case-shift (Section 8.4, Turkish İ).",
+        "Dot above (˙). Target: z. With case-shift on 'i' it yields Turkish İ.",
     ),
 ];
 
@@ -255,13 +255,24 @@ fn emit(f: &mut File, base: &[u32], modifiers: &[(u8, u8, u32)], capitalize: &[(
         "// Make edits in tables/*.csv and run `cargo build`.\n\n".into(),
     );
 
-    w(
-        f,
-        "/// Diacritic modifier enum — Section 8.3 of the specification.\n".into(),
+    // Every codepoint must fit in u16: halves every table versus u32.
+    let max_cp = base
+        .iter()
+        .copied()
+        .chain(modifiers.iter().map(|(_, _, r)| *r))
+        .chain(capitalize.iter().flat_map(|&(l, u)| [l, u]))
+        .max()
+        .expect("tables are non-empty");
+    assert!(
+        max_cp <= u32::from(u16::MAX),
+        "codepoint 0x{max_cp:04X} does not fit in u16; widen the generated tables"
     );
+
+    // ---------------------------------------------------------------- Modifier
+
     w(
         f,
-        "/// Discriminants match control byte codes directly.\n".into(),
+        "/// Diacritic modifiers. Discriminants are the control bytes themselves.\n".into(),
     );
     w(
         f,
@@ -311,36 +322,80 @@ fn emit(f: &mut File, base: &[u32], modifiers: &[(u8, u8, u32)], capitalize: &[(
     }
     w(f, "            _ => None,\n        }\n    }\n}\n\n".into());
 
-    // Base table
+    // ---------------------------------------------------------------- Base table
+
     w(
         f,
         "/// Base character lookup table: index is CL-8 code, value is Unicode codepoint.\n".into(),
     );
     w(
         f,
-        format!("pub const BASE_TABLE: [u32; {}] = [\n", base.len()),
+        format!("pub const BASE_TABLE: [u16; {}] = [\n", base.len()),
     );
     for chunk in base.chunks(8) {
-        let row: Vec<String> = chunk.iter().map(|c| format!("0x{c:05X}")).collect();
+        let row: Vec<String> = chunk.iter().map(|c| format!("0x{c:04X}")).collect();
         w(f, format!("    {},\n", row.join(", ")));
     }
     w(f, "];\n\n".into());
+
+    let base_cp_max = base.iter().copied().max().unwrap_or(0);
+    w(
+        f,
+        "/// Largest codepoint present in [`BASE_TABLE`], for O(1) rejection of everything above it.\n"
+            .into(),
+    );
+    w(f, format!("pub const BASE_CP_MAX: u16 = 0x{base_cp_max:04X};\n\n"));
+
+    // Reverse index: codes ordered by their codepoint, for binary search in `code_of`.
+    // Storing codes (u8) rather than a second copy of the codepoints keeps this to one
+    // byte per entry; the codepoint is read back through `BASE_TABLE`.
+    let mut by_cp: Vec<usize> = (0..base.len()).collect();
+    by_cp.sort_by_key(|&i| base[i]);
+    w(
+        f,
+        "/// CL-8 codes ordered by their Unicode codepoint — binary-search index for `code_of`.\n"
+            .into(),
+    );
+    w(
+        f,
+        "/// Holds codes, not codepoints: one byte per entry, the value is read via [`BASE_TABLE`].\n"
+            .into(),
+    );
+    w(
+        f,
+        format!("pub const BASE_BY_CP: [u8; {}] = [\n", by_cp.len()),
+    );
+    for chunk in by_cp.chunks(16) {
+        let row: Vec<String> = chunk.iter().map(|c| c.to_string()).collect();
+        w(f, format!("    {},\n", row.join(", ")));
+    }
+    w(f, "];\n\n".into());
+
+    // ---------------------------------------------------------------- Modifier table
+
+    let names: BTreeMap<u8, &str> = MODIFIER_NAMES.iter().map(|(c, n, _)| (*c, *n)).collect();
+    let mut sorted = modifiers.to_vec();
+    sorted.sort_by_key(|(m, b, _)| (*m, *b));
 
     w(
         f,
         "/// Modifier lookup table: `(modifier, base_code, result_codepoint)`.\n".into(),
     );
-    w(f, "/// Sorted by modifier, then by base code.\n".into());
+    w(
+        f,
+        "/// Sorted by modifier, then by base code: each modifier owns a contiguous,\n".into(),
+    );
+    w(
+        f,
+        "/// base-sorted slice delimited by [`MOD_OFFSETS`].\n".into(),
+    );
     w(
         f,
         format!(
-            "pub const MODIFIER_TABLE: [(Modifier, u8, u32); {}] = [\n",
-            modifiers.len()
+            "pub const MODIFIER_TABLE: [(Modifier, u8, u16); {}] = [\n",
+            sorted.len()
         ),
     );
-    let names: BTreeMap<u8, &str> = MODIFIER_NAMES.iter().map(|(c, n, _)| (*c, *n)).collect();
-    let mut sorted = modifiers.to_vec();
-    sorted.sort_by_key(|(m, b, _)| (*m, *b));
     for (m, b, r) in &sorted {
         w(
             f,
@@ -349,6 +404,79 @@ fn emit(f: &mut File, base: &[u32], modifiers: &[(u8, u8, u32)], capitalize: &[(
     }
     w(f, "];\n\n".into());
 
+    // Group boundaries: MOD_OFFSETS[i]..MOD_OFFSETS[i+1] is modifier MODIFIER_FIRST + i.
+    let first_code = MODIFIER_NAMES[0].0;
+    let mut offsets: Vec<usize> = Vec::with_capacity(MODIFIER_NAMES.len() + 1);
+    for i in 0..MODIFIER_NAMES.len() {
+        let code = first_code + i as u8;
+        offsets.push(
+            sorted
+                .iter()
+                .position(|(m, _, _)| *m >= code)
+                .unwrap_or(sorted.len()),
+        );
+    }
+    offsets.push(sorted.len());
+    w(
+        f,
+        "/// Group boundaries in [`MODIFIER_TABLE`]: rows of modifier `MODIFIER_FIRST + i`\n".into(),
+    );
+    w(
+        f,
+        "/// occupy `MOD_OFFSETS[i]..MOD_OFFSETS[i + 1]`.\n".into(),
+    );
+    w(
+        f,
+        format!(
+            "pub const MOD_OFFSETS: [u8; {}] = [{}];\n\n",
+            offsets.len(),
+            offsets
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    );
+
+    // Permutation of MODIFIER_TABLE ordered by result codepoint, for the encoder's
+    // reverse lookup. One byte per row instead of a second copy of the table.
+    let mut by_result: Vec<usize> = (0..sorted.len()).collect();
+    by_result.sort_by_key(|&i| sorted[i].2);
+    w(
+        f,
+        "/// Row indices of [`MODIFIER_TABLE`] ordered by result codepoint —\n".into(),
+    );
+    w(
+        f,
+        "/// binary-search index for `find_modifier_pair_for_codepoint`.\n".into(),
+    );
+    w(
+        f,
+        format!("pub const MOD_BY_RESULT: [u8; {}] = [\n", by_result.len()),
+    );
+    for chunk in by_result.chunks(16) {
+        let row: Vec<String> = chunk.iter().map(|c| c.to_string()).collect();
+        w(f, format!("    {},\n", row.join(", ")));
+    }
+    w(f, "];\n\n".into());
+
+    let res_min = sorted.iter().map(|(_, _, r)| *r).min().unwrap_or(0);
+    let res_max = sorted.iter().map(|(_, _, r)| *r).max().unwrap_or(0);
+    w(
+        f,
+        "/// Smallest composite codepoint producible by a modifier pair.\n".into(),
+    );
+    w(f, format!("pub const MOD_RESULT_MIN: u16 = 0x{res_min:04X};\n"));
+    w(
+        f,
+        "/// Largest composite codepoint producible by a modifier pair.\n".into(),
+    );
+    w(f, format!("pub const MOD_RESULT_MAX: u16 = 0x{res_max:04X};\n\n"));
+
+    // ---------------------------------------------------------------- Capitalization
+
+    let mut cap = capitalize.to_vec();
+    cap.sort_by_key(|(l, _)| *l);
     w(
         f,
         "/// Capitalization exceptions: `(lower_codepoint, upper_codepoint)`.\n".into(),
@@ -360,17 +488,17 @@ fn emit(f: &mut File, base: &[u32], modifiers: &[(u8, u8, u32)], capitalize: &[(
     w(
         f,
         format!(
-            "pub const CAPITALIZE_TABLE: [(u32, u32); {}] = [\n",
-            capitalize.len()
+            "pub const CAPITALIZE_TABLE: [(u16, u16); {}] = [\n",
+            cap.len()
         ),
     );
-    let mut cap = capitalize.to_vec();
-    cap.sort_by_key(|(l, _)| *l);
     for (l, u) in &cap {
         w(f, format!("    (0x{l:04X}, 0x{u:04X}),\n"));
     }
     w(f, "];\n\n".into());
 
+    let mut rev_cap: Vec<(u32, u32)> = capitalize.iter().map(|&(l, u)| (u, l)).collect();
+    rev_cap.sort_by_key(|(u, _)| *u);
     w(
         f,
         "/// Reverse capitalization table: `(upper_codepoint, lower_codepoint)`.\n".into(),
@@ -382,16 +510,16 @@ fn emit(f: &mut File, base: &[u32], modifiers: &[(u8, u8, u32)], capitalize: &[(
     w(
         f,
         format!(
-            "pub const REVERSE_CAPITALIZE_TABLE: [(u32, u32); {}] = [\n",
-            capitalize.len()
+            "pub const REVERSE_CAPITALIZE_TABLE: [(u16, u16); {}] = [\n",
+            rev_cap.len()
         ),
     );
-    let mut rev_cap: Vec<(u32, u32)> = capitalize.iter().map(|&(l, u)| (u, l)).collect();
-    rev_cap.sort_by_key(|(u, _)| *u);
     for (u, l) in &rev_cap {
         w(f, format!("    (0x{u:04X}, 0x{l:04X}),\n"));
     }
     w(f, "];\n\n".into());
+
+    // ---------------------------------------------------------------- Sizes
 
     w(f, "/// Total assigned codes in the base table.\n".into());
     w(
